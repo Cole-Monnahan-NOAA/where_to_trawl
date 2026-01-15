@@ -1,42 +1,46 @@
 
 # Very early version of this that does not leverage sparsity
-library(tidyr)
-library(ggplot2)
-library(fmesher)
-library(fields)
 
-# Gaussian process simulation of two correlated 2d spatial fields
-# using a Matern covariance function
-simulate_fields_gp <- function(xy, mean=c(0,0), alpha = 1, 
-                                sigma2 = 1, rho=0) {
-   dist_matrix <- as.matrix(dist(xy))
-   # alpha: range parameter (inverse of rho)
-   # sigma2: partial sill (variance)
-   # nu: smoothness parameter
-   nu <- 1
-   cov_s <- sigma2 * fields::Matern(dist_matrix, range = alpha, smoothness = nu)
-   cov_v <- matrix(c(1,rho,rho,1), nrow=2)
-   cov_matrix <- kronecker(cov_v, cov_s)
-   #corrplot::corrplot(cov2cor(cov_matrix))
+
+#' Gaussian process simulation of two correlated 2d spatial
+#' fields using a Matern covariance function
+#'
+#' @param xy A data.frame of spatial locations
+#' @param mu A vector of mean log abundance for each category
+#' @param Sigma A covariance matrix of the categories
+#' @param range The spatial decorrelation range
+#' @param spatial.var The spatial variation
+#' @param nreps Number of replicate simulations to do
+#' @param seed An optional random number seed for reproducibility
+#' @return A data.frame with locations and simulated
+#'   log-abundance for each category for each replicate
+simulate_fields_gp <- function(xy, mu,  Sigma, range, 
+                               spatial.var, nreps, seed=NULL) {
+  stopifnot(all.equal(length(mu), ncol(Sigma), nrow(Sigma)))
+  # build spatial covariance matrix from Matern function 
+  dists <- as.matrix(dist(xy))
+  cov_s <- spatial.var*Matern(dists, range=range, smoothness=1)
+  # combine space and categories
+  cov_total <- kronecker(Sigma, cov_s)
   
-   # Simulate the data using Cholesky cholesky of the total covariance
-   # We use the formula: y = Mu + L %*% epsilon
-   # where L is the lower triangular Cholesky factor (L L^T = Cov)
-  n <- nrow(cov_matrix)
-  L <- chol(cov_matrix) # This returns the upper triangular matrix
-  epsilon <- rnorm(n)
-  
-  # Generate the spatially correlated values (assuming mean = 0)
-  z <- t(L) %*% epsilon
-  z <- matrix(z, ncol=2) 
-  out <- data.frame(x=xy$x, y=xy$y, z1=z[,1]+mean[1], z2=z[,2]+mean[2])
+  # Simulate the data using cholesky of the total covariance
+  L <- t(chol(cov_total)) # This returns the lower triangular matrix
+  # uncorrelated white noise: N(0,1)
+  set.seed(seed)
+  out <- list()
+  for(rr in 1:nreps){
+    epsilon <- rnorm(nrow(cov_total))
+    # Correlate values (assuming mean = 0) based on cov_total
+    z <- L %*% epsilon
+    z <- matrix(z, ncol=ncol(Sigma))
+    # add means by category
+    z <- as.data.frame(z + mu[col(z)])
+    names(z) <- dimnames(Sigma)[[1]]#paste0('z', 1:ncol(Sigma))
+    out[[rr]] <- cbind(replicate=rr, x=xy$x, y=xy$y, z)
+  }
+  out <- bind_rows(out) |>
+    pivot_longer(cols=-c(replicate,x,y), names_to='category', values_to = 'logA')
   return(out)
 }
 
-xy <- expand.grid(x=1:100, y=seq(1:5)*2)
-sim <- simulate_fields_gp(xy=xy, mean=c(8,0), sigma2=5, alpha = 1, rho=.9)
-sim.long <- tidyr::pivot_longer(sim, cols=c('z1', 'z2'))
-ggplot(sim.long, aes(x, y=value, color=name)) + geom_point() + geom_line() +
-  facet_wrap('y') # y is a proxy for transect number for now
-ggplot(sim.long, aes(x, y=y, size=value, color=value)) + geom_point() +
-  facet_wrap('name')
+
