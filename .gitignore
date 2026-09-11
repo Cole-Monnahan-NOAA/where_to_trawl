@@ -1,3 +1,7 @@
+# don't track testing in results folder
+/results/delme*
+/results/initial*
+
 # History files
 .Rhistory
 .Rapp.history

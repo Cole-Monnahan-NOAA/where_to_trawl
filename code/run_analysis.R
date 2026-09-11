@@ -19,8 +19,9 @@ source("code/simulate_correlated_fields.R")
 # category = unique combination of class, spp, size, etc. so a
 # single row
 categories <- expand.grid(scenario='EBS-pollock', 
-                          class='PLK1', # acoustic class
+                          class='PK1', # acoustic class
                           size=c('15cm', '25cm', '35cm', '>35cm'),
+#                          length=c(15,25, 35, 50),
                           species=c('pollock', 'other-fish'))
 categories <- mutate(categories, category=paste(species,class,size, sep='_'))
 # assumed population level mean of log abundance (I guess billions for pollock?)
@@ -28,7 +29,7 @@ categories$logmean <- log(c(10,15,5,3, 3, 1, .5, .1))
 Nc <- nrow(categories)
 
 # spatial properties
-range <- 5 # decorrelation range = how many km away to get 10% correlation in space
+range <- 50 # decorrelation range = how many km away to get 10% correlation in space
 spatial.var <- .1 # spatial variation controls range of simulated log-abundance
 mu <- categories$logmean
 var <- rep(1,Nc) # variance of category, assumed 1 for now
@@ -59,5 +60,6 @@ sim <- merge(categories, sim, by='category')
 
 # quick visual checks, !! only works for a single transect!!
 ggplot(sim, aes(x, y=logA, color=size)) + geom_line() + facet_grid(species~replicate)
+ggplot(sim, aes(x, y=exp(logA), color=size)) + geom_line() + facet_grid(species~replicate)
 
 write.csv(sim, file='results/sim_test.csv')
